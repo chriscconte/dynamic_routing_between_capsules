@@ -71,6 +71,7 @@ def main():
                         loss = model(x, t)
                     result = model.pop_results()
                     report(train_iter.epoch, result)
+            serializers.save_npz(args.save+'_'+str(train_iter.epoch), model)
             if result['accuracy'] > best:
                 best, best_epoch = result['accuracy'], train_iter.epoch
                 serializers.save_npz(args.save, model)
