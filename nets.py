@@ -56,10 +56,11 @@ init = chainer.initializers.Uniform(scale=0.05)
 
 class CapsNet(chainer.Chain):
 
-    def __init__(self, use_reconstruction=False):
+    def __init__(self, use_reconstruction=False, mmnist=False):
         super(CapsNet, self).__init__()
+        self.mmnist = mmnist
         self.n_iterations = 3  # dynamic routing
-        self.n_grids = 6  # grid width of primary capsules layer
+        self.n_grids = 10  # grid width of primary capsules layer
         self.n_raw_grids = self.n_grids
         self.use_reconstruction = use_reconstruction
         with self.init_scope():
@@ -92,13 +93,30 @@ class CapsNet(chainer.Chain):
     def __call__(self, x, t):
         if chainer.config.train:
             x = _augmentation(x)
-        vs_norm, vs = self.output(x)
-        self.loss = self.calculate_loss(vs_norm, t, vs, x)
 
-        self.results['loss'].append(self.loss.data * t.shape[0])
-        self.results['correct'].append(self.calculate_correct(vs_norm, t))
-        self.results['N'] += t.shape[0]
-        return self.loss
+        if self.mmnist:
+            xp = self.xp
+            x_composed, x_a, x_b = xp.split(x,indices_or_sections=3,axis=2)
+            y_composed, y_a, y_b = xp.split(t,indices_or_sections=3,axis=1)
+
+            vs_norm, vs = self.output(x_composed)
+
+            loss_a = self.calculate_loss(vs_norm, y_a, vs, x_a)
+            loss_b = self.calculate_loss(vs_norm, y_b, vs, x_b)
+
+            self.loss = (loss_a + loss_b) / 2.0
+
+            self.results['loss'].append(self.loss.data * t.shape[0])
+            self.results['correct'].append(0)
+            self.results['N'] += t.shape[0]
+
+            return self.loss
+        else:
+            vs_norm, vs = self.output(x)
+            self.results['loss'].append(self.loss.data * t.shape[0])
+            self.results['correct'].append(self.calculate_correct(vs_norm, t))
+            self.results['N'] += t.shape[0]
+            return self.loss
 
     def output(self, x):
         batchsize = x.shape[0]
@@ -107,6 +125,7 @@ class CapsNet(chainer.Chain):
 
         # h1 = F.relu(self.conv1(x))
         h1 = F.leaky_relu(self.conv1(x), 0.05)
+        # first two convolutional layers
         pr_caps = F.split_axis(self.conv2(h1), 32, axis=1)
         # shapes if MNIST. -> if MultiMNIST
         # x (batchsize, 1, 28, 28) -> (:, :, 36, 36)
@@ -121,6 +140,7 @@ class CapsNet(chainer.Chain):
         Preds = F.stack(Preds, axis=3)
         assert(Preds.shape == (batchsize, 16, 10, 32, gg))
 
+        # routing algo between PrimaryCaps and DigitCaps
         bs = self.xp.zeros((batchsize, 10, 32, gg), dtype='f')
         for i_iter in range(n_iters):
             cs = F.softmax(bs, axis=1)
@@ -131,11 +151,13 @@ class CapsNet(chainer.Chain):
             assert(vs.shape == (batchsize, 16, 10))
 
             if i_iter != n_iters - 1:
+                # execs on all iters except last one
                 Vs = F.broadcast_to(vs[:, :, :, None, None], Preds.shape)
                 assert(Vs.shape == (batchsize, 16, 10, 32, gg))
                 bs = bs + F.sum(Vs * Preds, axis=1)
                 assert(bs.shape == (batchsize, 10, 32, gg))
 
+        # vs is the DigitCaps Layer
         vs_norm = get_norm(vs)
         return vs_norm, vs
 
@@ -168,6 +190,7 @@ class CapsNet(chainer.Chain):
         batchsize = t.shape[0]
         I = xp.arange(batchsize)
         T = xp.zeros(vs_norm.shape, dtype='f')
+        
         T[I, t] = 1.
         m = xp.full(vs_norm.shape, 0.1, dtype='f')
         m[I, t] = 0.9

@@ -5,10 +5,54 @@ import json
 import numpy as np
 
 import chainer
-from chainer.dataset.convert import concat_examples
+from chainer.dataset import concat_examples
 from chainer import serializers
-
 import nets
+import cv2
+
+
+def shift_image(img):
+    ''' shifts 28 x 28 image in both axes a maax of 4 pixels in
+    each direction resulting in a 36x36 image '''
+
+    new = np.zeros((1, 36,36))
+
+    shift_r = np.random.randint(0,9,dtype='int')
+    shift_d = np.random.randint(0,9,dtype='int')
+
+    for x in range(28):
+        for y in range(28):
+            new[0, x+shift_r, y+shift_d] = img[0, x,y]
+
+    return new
+
+def combine_images(starting_images, save='train', num_samples=60000):
+
+    count = 0
+    mm = []
+    num_samples = 2000
+    for img_a, num_a in starting_images:
+        for img_b, num_b in starting_images:
+            if count >= num_samples:
+                break
+            if num_a != num_b:
+                count += 1
+                shift_img_a = shift_image(img_a)
+                shift_img_b = shift_image(img_b)
+                mm_img = np.logical_or(shift_img_a,shift_img_b, dtype='f')
+                images = np.concatenate([mm_img,shift_img_a,shift_img_b], axis=-1)
+                mm_num = np.logical_or(num_a, num_b, dtype='f')
+                nums = np.stack([mm_num, num_a, num_b], axis=-1)
+
+                mm.append({'x': images, 'y':nums})
+
+                if count % 1000 == 0:
+                    print(count, '/', num_samples)
+
+    # save results
+    np.save('./mmnist_data/' + save, mm)
+
+    return mm
 
 
 def main():
@@ -20,12 +64,13 @@ def main():
     parser.add_argument('--seed', '-s', type=int, default=789)
     parser.add_argument('--reconstruct', '--recon', action='store_true')
     parser.add_argument('--save')
+    parser.add_argument('--mmnist', '-m', action='store_true')
     args = parser.parse_args()
     print(json.dumps(args.__dict__, indent=2))
 
     # Set up a neural network to train
     np.random.seed(args.seed)
-    model = nets.CapsNet(use_reconstruction=args.reconstruct)
+    model = nets.CapsNet(use_reconstruction=args.reconstruct, mmnist=args.mmnist)
     if args.gpu >= 0:
         # Make a speciied GPU current
         chainer.cuda.get_device_from_id(args.gpu).use()
@@ -37,11 +82,21 @@ def main():
     optimizer = chainer.optimizers.Adam(alpha=1e-3)
     optimizer.setup(model)
 
-    # Load the MNIST dataset
+    # Load the MNIST dataset or create MMNIST 
     train, test = chainer.datasets.get_mnist(ndim=3)
-    train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
+    if args.mmnist:
+        try:
+            raise Exception('for now') 
+            train = [tuple(i) for i in np.load('./mmnist_data/train.npy')]
+            test = [tuple(i) for i in np.load('./mmnist_data/test.npy')]
+        except:
+            train = combine_images(train, save='train', num_samples=600000)
+            test = combine_images(test, save='test', num_samples=10000)
+        
+    train_iter = chainer.iterators.SerialIterator(train, 2)#args.batchsize)
     test_iter = chainer.iterators.SerialIterator(test, 100,
                                                  repeat=False, shuffle=False)
+
 
     def report(epoch, result):
         mode = 'train' if chainer.config.train else 'test '
@@ -56,17 +111,27 @@ def main():
     print('TRAINING starts')
     while train_iter.epoch < args.epoch:
         batch = train_iter.next()
-        x, t = concat_examples(batch, args.gpu)
+        m = concat_examples(batch, args.gpu)
+        if type(m) == type({}):
+            x, t = m['x'], m['y']
+        else:
+            x, t = m
+
+
         optimizer.update(model, x, t)
 
         # evaluation
         if train_iter.is_new_epoch:
             result = model.pop_results()
-            report(train_iter.epoch, result)
+            report(train_iter.epoch, result).k
 
             with chainer.no_backprop_mode():
                 with chainer.using_config('train', False):
                     for batch in test_iter:
+                        if type(m) == type({}):
+                            x, t = m['x'], m['y']
+                        else:
+                            x, t = m
                         x, t = concat_examples(batch, args.gpu)
                         loss = model(x, t)
                     result = model.pop_results()
