@@ -26,6 +26,14 @@ def shift_image(img):
 
     return new
 
+def one_hot_y(y, num_classes=10):
+    one_hot_y = np.zeros(num_classes)
+
+    one_hot_y[y] = 1.
+
+    return one_hot_y
+
+
 def combine_images(starting_images, save='train', num_samples=60000):
 
     count = 0
@@ -40,9 +48,12 @@ def combine_images(starting_images, save='train', num_samples=60000):
                 shift_img_a = shift_image(img_a)
                 shift_img_b = shift_image(img_b)
                 mm_img = np.logical_or(shift_img_a,shift_img_b, dtype='f')
-                images = np.concatenate([mm_img,shift_img_a,shift_img_b], axis=-1)
-                mm_num = np.logical_or(num_a, num_b, dtype='f')
-                nums = np.stack([mm_num, num_a, num_b], axis=-1)
+                images = np.concatenate([mm_img,shift_img_a,shift_img_b], axis=0)
+
+
+                hot_num_a, hot_num_b = one_hot_y(num_a), one_hot_y(num_b)
+                mm_num = np.logical_or(hot_num_a, hot_num_b, dtype='f')
+                nums = np.stack([mm_num, hot_num_a, hot_num_b], axis=-1)
 
                 mm.append({'x': images, 'y':nums})
 
@@ -93,7 +104,7 @@ def main():
             train = combine_images(train, save='train', num_samples=600000)
             test = combine_images(test, save='test', num_samples=10000)
         
-    train_iter = chainer.iterators.SerialIterator(train, 2)#args.batchsize)
+    train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     test_iter = chainer.iterators.SerialIterator(test, 100,
                                                  repeat=False, shuffle=False)
 
@@ -116,24 +127,29 @@ def main():
             x, t = m['x'], m['y']
         else:
             x, t = m
-
+            
+        x = x.astype('float32')
+        t = t.astype('int32')
 
         optimizer.update(model, x, t)
 
         # evaluation
-        if train_iter.is_new_epoch:
+        if True: #train_iter.is_new_epoch:
             result = model.pop_results()
-            report(train_iter.epoch, result).k
+            report(train_iter.epoch, result)
 
             with chainer.no_backprop_mode():
                 with chainer.using_config('train', False):
                     for batch in test_iter:
+                        m = concat_examples(batch, args.gpu)
                         if type(m) == type({}):
                             x, t = m['x'], m['y']
                         else:
                             x, t = m
-                        x, t = concat_examples(batch, args.gpu)
+                        x = x.astype('float32')
+                        t = t.astype('int32')
                         loss = model(x, t)
+
                     result = model.pop_results()
                     report(train_iter.epoch, result)
             if train_iter.epoch % 10 == 0:

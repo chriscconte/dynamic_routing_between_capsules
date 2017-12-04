@@ -96,8 +96,9 @@ class CapsNet(chainer.Chain):
 
         if self.mmnist:
             xp = self.xp
-            x_composed, x_a, x_b = xp.split(x,indices_or_sections=3,axis=2)
-            y_composed, y_a, y_b = xp.split(t,indices_or_sections=3,axis=1)
+
+            x_composed, x_a, x_b = xp.split(x,indices_or_sections=3,axis=1)
+            y_composed, y_a, y_b = xp.split(t,indices_or_sections=3,axis=-1)
 
             vs_norm, vs = self.output(x_composed)
 
@@ -172,7 +173,7 @@ class CapsNet(chainer.Chain):
         x_recon = F.sigmoid(
             self.fc3(F.relu(
                 self.fc2(F.relu(
-                    self.fc1(masked_vs)))))).reshape((batchsize, 1, 28, 28))
+                    self.fc1(masked_vs)))))).reshape((batchsize, 1, 36, 36))
         return x_recon
 
     def calculate_loss(self, vs_norm, t, vs, x):
@@ -187,6 +188,8 @@ class CapsNet(chainer.Chain):
 
     def calculate_classification_loss(self, vs_norm, t):
         xp = self.xp
+        xp.set_printoptions(threshold=xp.nan)
+
         batchsize = t.shape[0]
         I = xp.arange(batchsize)
         T = xp.zeros(vs_norm.shape, dtype='f')
