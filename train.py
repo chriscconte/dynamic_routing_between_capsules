@@ -75,7 +75,7 @@ def combine_images(starting_images, save='train', num_samples=60000):
 
 def main():
     parser = argparse.ArgumentParser(description='CapsNet: MNIST')
-    parser.add_argument('--batchsize', '-b', type=int, default=1)
+    parser.add_argument('--batchsize', '-b', type=int, default=256)
     parser.add_argument('--decay', '-d', type=float, default=0.95)
     parser.add_argument('--epoch', '-e', type=int, default=500)
     parser.add_argument('--gpu', '-g', type=int, default=-1)
@@ -148,7 +148,7 @@ def main():
         optimizer.update(model, x, t)
 
         # evaluation
-        if True: #train_iter.is_new_epoch:
+        if train_iter.is_new_epoch:
             result = model.pop_results()
             report(train_iter.epoch, result)
 
@@ -166,7 +166,7 @@ def main():
 
                     result = model.pop_results()
                     report(train_iter.epoch, result)
-            if train_iter.epoch % 30 == 0:
+            if train_iter.epoch % 10 == 0:
                 serializers.save_npz(args.save+'_'+str(train_iter.epoch), model)
             if result['accuracy'] > best:
                 best, best_epoch = result['accuracy'], train_iter.epoch
