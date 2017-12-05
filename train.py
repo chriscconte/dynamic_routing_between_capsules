@@ -6,6 +6,7 @@ import numpy as np
 
 import chainer
 from chainer.dataset import concat_examples
+from chainer.datasets import tuple_dataset
 from chainer import serializers
 import nets
 import cv2
@@ -35,37 +36,36 @@ def one_hot_y(y, num_classes=10):
 
 
 def combine_images(starting_images, save='train', num_samples=60000):
-    count = 0
+    num_samples=1000
+    count = 0 
     mm = []
 
     x = np.empty((num_samples,3,36,36), dtype=np.float32)
-    y = np.empty((num_samples,3,10), dtype=np.uint8)
+    y = np.empty((num_samples,10,3), dtype=np.uint8)
 
-    for idx_a in a_index_order:
-        for idx_b in b_index_order:
-            if count >= num_samples:
-                break
-            
-            img_a, num_a = starting_images[idx_a]
-            img_b, num_b = starting_images[idx_b]
+    while count < num_samples:
+        idx_a = np.random.randint(0, num_samples)
+        idx_b = np.random.randint(0, num_samples)
+
+        img_a, num_a = starting_images[idx_a]
+        img_b, num_b = starting_images[idx_b]
     
-            if num_a != num_b:
-                count += 1
-                shift_img_a = shift_image(img_a)
-                shift_img_b = shift_image(img_b)
-                mm_img = np.logical_or(shift_img_a,shift_img_b, dtype='f')
-                images = np.concatenate([mm_img,shift_img_a,shift_img_b], axis=0)
+        if num_a != num_b:
+            shift_img_a = shift_image(img_a)
+            shift_img_b = shift_image(img_b)
+            mm_img = np.logical_or(shift_img_a,shift_img_b, dtype='f')
+            images = np.concatenate([mm_img,shift_img_a,shift_img_b], axis=0)
 
+            hot_num_a, hot_num_b = one_hot_y(num_a), one_hot_y(num_b)
+            mm_num = np.logical_or(hot_num_a, hot_num_b, dtype='f')
+            nums = np.stack([mm_num, hot_num_a, hot_num_b], axis=-1)
 
-                hot_num_a, hot_num_b = one_hot_y(num_a), one_hot_y(num_b)
-                mm_num = np.logical_or(hot_num_a, hot_num_b, dtype='f')
-                nums = np.stack([mm_num, hot_num_a, hot_num_b], axis=-1)
+            x[count] = images
+            y[count] = nums
 
-                x[count] = images
-                y[count] = nums
-
-                if count % 1000 == 0:
-                    print(count, '/', num_samples)
+            count += 1
+            if count % 1000 == 0:
+                print(count, '/', num_samples)
 
     # save results
     np.savez_compressed('./mmnist_data/' + save, x=x, y=y)
@@ -108,11 +108,14 @@ def main():
     train, test = chainer.datasets.get_mnist(ndim=3)
     if args.mmnist:
         try:
-            raise Exception('for now') 
-            train = [tuple(i) for i in np.load('./mmnist_data/train.npy')]
-            test = [tuple(i) for i in np.load('./mmnist_data/test.npy')]
+            raw = np.load('./mmnist_data/train.npz')
+            train = tuple_dataset.TupleDataset(raw['x'], raw['y']) 
+
+            raw = np.load('./mmnist_data/test.npz')
+            test = tuple_dataset.TupleDataset(raw['x'], raw['y']) 
+
         except:
-            train = combine_images(train, save='train', num_samples=600000)
+            train = combine_images(train, save='train', num_samples=60000)
             test = combine_images(test, save='test', num_samples=10000)
         
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
