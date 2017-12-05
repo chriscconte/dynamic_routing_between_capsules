@@ -35,14 +35,20 @@ def one_hot_y(y, num_classes=10):
 
 
 def combine_images(starting_images, save='train', num_samples=60000):
-
     count = 0
     mm = []
-    num_samples = 2000
-    for img_a, num_a in starting_images:
-        for img_b, num_b in starting_images:
+
+    x = np.empty((num_samples,3,36,36), dtype=np.float32)
+    y = np.empty((num_samples,3,10), dtype=np.uint8)
+
+    for idx_a in a_index_order:
+        for idx_b in b_index_order:
             if count >= num_samples:
                 break
+            
+            img_a, num_a = starting_images[idx_a]
+            img_b, num_b = starting_images[idx_b]
+    
             if num_a != num_b:
                 count += 1
                 shift_img_a = shift_image(img_a)
@@ -55,15 +61,16 @@ def combine_images(starting_images, save='train', num_samples=60000):
                 mm_num = np.logical_or(hot_num_a, hot_num_b, dtype='f')
                 nums = np.stack([mm_num, hot_num_a, hot_num_b], axis=-1)
 
-                mm.append({'x': images, 'y':nums})
+                x[count] = images
+                y[count] = nums
 
                 if count % 1000 == 0:
                     print(count, '/', num_samples)
 
     # save results
-    np.save('./mmnist_data/' + save, mm)
+    np.savez_compressed('./mmnist_data/' + save, x=x, y=y)
 
-    return mm
+    return tuple_dataset.TupleDataset(x, y) 
 
 
 def main():
@@ -76,12 +83,16 @@ def main():
     parser.add_argument('--reconstruct', '--recon', action='store_true')
     parser.add_argument('--save', type=str, default='model')
     parser.add_argument('--mmnist', '-m', action='store_true')
+    parser.add_argument('--load', type=str, default='')
     args = parser.parse_args()
     print(json.dumps(args.__dict__, indent=2))
 
     # Set up a neural network to train
     np.random.seed(args.seed)
     model = nets.CapsNet(use_reconstruction=args.reconstruct, mmnist=args.mmnist)
+
+    if args.load != '':
+        serializers.load_npz(args.load, model)
     if args.gpu >= 0:
         # Make a speciied GPU current
         chainer.cuda.get_device_from_id(args.gpu).use()
@@ -152,7 +163,7 @@ def main():
 
                     result = model.pop_results()
                     report(train_iter.epoch, result)
-            if train_iter.epoch % 10 == 0:
+            if train_iter.epoch % 30 == 0:
                 serializers.save_npz(args.save+'_'+str(train_iter.epoch), model)
             if result['accuracy'] > best:
                 best, best_epoch = result['accuracy'], train_iter.epoch

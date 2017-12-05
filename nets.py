@@ -191,7 +191,6 @@ class CapsNet(chainer.Chain):
 
     def calculate_classification_loss(self, vs_norm, t):
         xp = self.xp
-        xp.set_printoptions(threshold=xp.nan)
 
         batchsize = t.shape[0]
         I = xp.arange(batchsize)
