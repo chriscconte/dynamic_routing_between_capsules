@@ -74,7 +74,7 @@ class CapsNet(chainer.Chain):
 
             self.fc1 = L.Linear(16 * 10, 512, initialW=init)
             self.fc2 = L.Linear(512, 1024, initialW=init)
-            self.fc3 = L.Linear(1024, 784, initialW=init)
+            self.fc3 = L.Linear(1024, 1296, initialW=init)
 
         _count_params(self, n_grids=self.n_grids)
         self.results = {'N': 0, 'loss': [], 'correct': [],
@@ -86,6 +86,7 @@ class CapsNet(chainer.Chain):
         merge['cls_loss'] = sum(self.results['cls_loss']) / self.results['N']
         merge['rcn_loss'] = sum(self.results['rcn_loss']) / self.results['N']
         merge['accuracy'] = sum(self.results['correct']) / self.results['N']
+        print(sum(self.results['correct']))
         self.results = {'N': 0, 'loss': [], 'correct': [],
                         'cls_loss': [], 'rcn_loss': []}
         return merge
@@ -100,6 +101,8 @@ class CapsNet(chainer.Chain):
             x_composed, x_a, x_b = xp.split(x,indices_or_sections=3,axis=1)
             y_composed, y_a, y_b = xp.split(t,indices_or_sections=3,axis=-1)
 
+            y_composed = xp.squeeze(y_composed, axis=(2,))
+
             vs_norm, vs = self.output(x_composed)
 
             loss_a = self.calculate_loss(vs_norm, y_a, vs, x_a)
@@ -108,7 +111,7 @@ class CapsNet(chainer.Chain):
             self.loss = (loss_a + loss_b) / 2.0
 
             self.results['loss'].append(self.loss.data * t.shape[0])
-            self.results['correct'].append(0)
+            self.results['correct'].append(self.calculate_correct(vs_norm, y_composed, ndim=2))
             self.results['N'] += t.shape[0]
 
             return self.loss
@@ -208,5 +211,13 @@ class CapsNet(chainer.Chain):
         loss = (x_recon - x) ** 2
         return F.sum(loss) / batchsize
 
-    def calculate_correct(self, v, t):
-        return (self.xp.argmax(v.data, axis=1) == t).sum()
+    def calculate_correct(self, v, t, ndim=1):
+        if ndim==1:
+            return (self.xp.argmax(v.data, axis=1) == t).sum()
+        else:
+            top_args = self.xp.argsort(v.data, axis=1)
+            top_args[top_args < 10 - ndim] = -1
+            top_args[top_args >= 10 - ndim] = 1
+
+            return ((top_args == t).astype('float32')).sum()
+

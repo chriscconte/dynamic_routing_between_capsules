@@ -68,13 +68,13 @@ def combine_images(starting_images, save='train', num_samples=60000):
 
 def main():
     parser = argparse.ArgumentParser(description='CapsNet: MNIST')
-    parser.add_argument('--batchsize', '-b', type=int, default=256)
+    parser.add_argument('--batchsize', '-b', type=int, default=1)
     parser.add_argument('--decay', '-d', type=float, default=0.95)
     parser.add_argument('--epoch', '-e', type=int, default=500)
     parser.add_argument('--gpu', '-g', type=int, default=-1)
     parser.add_argument('--seed', '-s', type=int, default=789)
     parser.add_argument('--reconstruct', '--recon', action='store_true')
-    parser.add_argument('--save')
+    parser.add_argument('--save', type=str, default='model')
     parser.add_argument('--mmnist', '-m', action='store_true')
     args = parser.parse_args()
     print(json.dumps(args.__dict__, indent=2))
