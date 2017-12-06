@@ -4,7 +4,7 @@ import chainer
 from chainer import cuda
 import chainer.functions as F
 import chainer.links as L
-
+import cv2
 
 def _augmentation(x):
     xp = cuda.get_array_module(x)
@@ -105,14 +105,44 @@ class CapsNet(chainer.Chain):
             
             vs_norm, vs = self.output(x_composed)
 
-            loss_a = self.calculate_loss(vs_norm, y_a, vs, x_a)
-            loss_b = self.calculate_loss(vs_norm, y_b, vs, x_b)
+            batchsize = y_composed.shape[0]
 
-            self.loss = (loss_a + loss_b) / 2.0
+            I = xp.arange(batchsize)
+            T = xp.zeros(vs_norm.shape, dtype='f')
+            num_a = xp.squeeze(xp.argmax(y_a, axis=1))
+            num_b = xp.squeeze(xp.argmax(y_b, axis=1))
 
-            self.results['loss'].append(self.loss.data * t.shape[0])
+            T[I, num_a] = 1.
+            T[I, num_b] = 1.
+
+            m = xp.full(vs_norm.shape, 0.1, dtype='f')
+            m[I, num_a] = 0.9
+            m[I, num_b] = 0.9
+
+            #print('batchsize',batchsize)
+            #print('y_composed[0]',y_composed[0])
+            #print('vs_norm[0]',vs_norm[0])
+            #print('T[0]',T[0])
+            #print('m[0]',m[0])
+
+            #print('x shape', x_composed[0].shape)
+
+            #cv2.imshow('x_composed',xp.squeeze(x_composed[0]))
+            #cv2.waitKey(0)
+
+            loss = T * F.relu(m - vs_norm) ** 2 + \
+                0.5 * (1. - T) * F.relu(vs_norm - m) ** 2
+
+            self.loss = F.sum(loss) / batchsize
+
+            #loss_a = self.calculate_loss(vs_norm, y_a, vs, x_a)
+            #loss_b = self.calculate_loss(vs_norm, y_b, vs, x_b)
+
+            #self.loss = (loss_a + loss_b) / 2.0
+
+            self.results['loss'].append(self.loss.data * y_composed.shape[0])
             self.results['correct'].append(self.calculate_correct(vs_norm, y_composed, ndim=2))
-            self.results['N'] += t.shape[0]
+            self.results['N'] += y_composed.shape[0]
 
             return self.loss
         else:
