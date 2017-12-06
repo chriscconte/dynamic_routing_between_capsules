@@ -100,16 +100,10 @@ class CapsNet(chainer.Chain):
 
             x_composed, x_a, x_b = xp.split(x,indices_or_sections=3,axis=1)
             y_composed, y_a, y_b = xp.split(t,indices_or_sections=3,axis=-1)
-            print(y_composed.shape, y_a, y_b)
-            print(t)
 
             y_composed = xp.squeeze(y_composed, axis=(2,))
             
-            print(y_composed.shape, y_a, y_b)
-
             vs_norm, vs = self.output(x_composed)
-            
-            print('calculated forward')
 
             loss_a = self.calculate_loss(vs_norm, y_a, vs, x_a)
             loss_b = self.calculate_loss(vs_norm, y_b, vs, x_b)
@@ -137,7 +131,6 @@ class CapsNet(chainer.Chain):
         h1 = F.leaky_relu(self.conv1(x), 0.05)
         # first two convolutional layers
         pr_caps = F.split_axis(self.conv2(h1), 32, axis=1)
-        print('pr caps')
         # shapes if MNIST. -> if MultiMNIST
         # x (batchsize, 1, 28, 28) -> (:, :, 36, 36)
         # h1 (batchsize, 256, 20, 20) -> (:, :, 28, 28)
@@ -148,7 +141,6 @@ class CapsNet(chainer.Chain):
             pred = self.Ws[i](pr_caps[i])
             Pred = pred.reshape((batchsize, 16, 10, gg))
             Preds.append(Pred)
-        print('primcaps')
         Preds = F.stack(Preds, axis=3)
         assert(Preds.shape == (batchsize, 16, 10, 32, gg))
 
@@ -178,7 +170,8 @@ class CapsNet(chainer.Chain):
         batchsize = t.shape[0]
         I = xp.arange(batchsize)
         mask = xp.zeros(vs.shape, dtype='f')
-        mask[I, :, t] = 1.
+        mask[I, :, xp.argmax(t)] = 1.
+        
         masked_vs = mask * vs
 
         x_recon = F.sigmoid(
@@ -226,5 +219,5 @@ class CapsNet(chainer.Chain):
             top_args[top_args < 10 - ndim] = -1
             top_args[top_args >= 10 - ndim] = 1
 
-            return ((top_args == t).astype('float32')).sum()
+            return ((top_args == t).astype('float32')).sum() / ndim
 

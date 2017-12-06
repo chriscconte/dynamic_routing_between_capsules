@@ -32,7 +32,7 @@ def save_images(xs, filename, marked_row=0):
         ai.set_yticklabels([])
         ai.set_axis_off()
         color = 'Greens_r' if i // width == marked_row else 'Blues_r'
-        ai.imshow(xi.reshape(28, 28), cmap=color, vmin=0., vmax=1.)
+        ai.imshow(xi.reshape(36, 36), cmap=color, vmin=0., vmax=1.)
 
     plt.subplots_adjust(
         left=None, bottom=None, right=None, top=None, wspace=0.05, hspace=0.05)
@@ -80,6 +80,19 @@ def visualize_reconstruction_tweaked(model, x, t, filename='vis_tweaked.png'):
                 filename,
                 marked_row=4)
 
+def get_mmnist_samples(dataset):
+    # 2 samples for each digit
+    samples = []
+    while len(samples) < 20:
+        batch = dataset.next()
+
+        for i, (x, t) in enumerate(batch):
+            if np.argmax(t[:,1]) == len(samples) // 2:
+                print('{}-th sample is used'.format(i))
+                samples.append((x, t))
+            if len(samples) >= 20:
+                break
+    return samples
 
 def get_samples(dataset):
     # 2 samples for each digit
@@ -94,6 +107,8 @@ def get_samples(dataset):
 
 
 if __name__ == '__main__':
+    DATA_PATH = '/home/ccc2174/capsnet-segmentation/mmnist_data/'
+
     parser = argparse.ArgumentParser(
         description='CapsNet: MNIST reconstruction')
     parser.add_argument('--gpu', '-g', type=int, default=-1)
@@ -109,20 +124,23 @@ if __name__ == '__main__':
         model.to_gpu()
 
     if args.mmnist:
-        _, test = get_multi_mnist_dataset(args.batchsize, 100, path=DATA_PATH)
+        _, test = get_multi_mnist_dataset(256, 100, path=DATA_PATH)
     else:
-        _, test = get_mnist_dataset(args.batchsize, 100)
+        _, test = get_mnist_dataset(256, 100)
 
-    batch = get_samples(test)
+    if args.mmnist:
+        batch = get_mmnist_samples(test)
+    else:
+        batch = get_samples(test)
     x, t = fetch_new_batch(batch, args.gpu)
 
     with chainer.no_backprop_mode():
         with chainer.using_config('train', False):
            
-            x_composed, x_a, x_b = xp.split(x,indices_or_sections=3,axis=1)
-            y_composed, y_a, y_b = xp.split(t,indices_or_sections=3,axis=-1)
+            x_composed, x_a, x_b = np.split(x,indices_or_sections=3,axis=1)
+            y_composed, y_a, y_b = np.split(t,indices_or_sections=3,axis=-1)
 
-            y_composed = xp.squeeze(y_composed, axis=(2,))
+            y_composed = np.squeeze(y_composed, axis=(2,))
             
             visualize_reconstruction(model, x_composed, y_a, filename='vis_a.png')
             visualize_reconstruction_alldigits(model, x_composed, y_a, filename='vis_all_a.png')

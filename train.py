@@ -9,68 +9,20 @@ from chainer.dataset import concat_examples
 from chainer.datasets import tuple_dataset
 from chainer import serializers
 import nets
-import cv2
 
+from data import get_multi_mnist_dataset 
+from data import get_mnist_dataset
+from data import fetch_new_batch
 
-def shift_image(img):
-    ''' shifts 28 x 28 image in both axes a maax of 4 pixels in
-    each direction resulting in a 36x36 image '''
+DATA_PATH = './mmnist_data/'
 
-    new = np.zeros((1, 36,36))
-
-    shift_r = np.random.randint(0,9,dtype='int')
-    shift_d = np.random.randint(0,9,dtype='int')
-
-    for x in range(28):
-        for y in range(28):
-            new[0, x+shift_r, y+shift_d] = img[0, x,y]
-
-    return new
-
-def one_hot_y(y, num_classes=10):
-    one_hot_y = np.zeros(num_classes)
-
-    one_hot_y[y] = 1.
-
-    return one_hot_y
-
-
-def combine_images(starting_images, save='train', num_samples=60000):
-    num_samples=1000
-    count = 0 
-    mm = []
-
-    x = np.empty((num_samples,3,36,36), dtype=np.float32)
-    y = np.empty((num_samples,10,3), dtype=np.uint8)
-
-    while count < num_samples:
-        idx_a = np.random.randint(0, num_samples)
-        idx_b = np.random.randint(0, num_samples)
-
-        img_a, num_a = starting_images[idx_a]
-        img_b, num_b = starting_images[idx_b]
-    
-        if num_a != num_b:
-            shift_img_a = shift_image(img_a)
-            shift_img_b = shift_image(img_b)
-            mm_img = np.logical_or(shift_img_a,shift_img_b, dtype='f')
-            images = np.concatenate([mm_img,shift_img_a,shift_img_b], axis=0)
-
-            hot_num_a, hot_num_b = one_hot_y(num_a), one_hot_y(num_b)
-            mm_num = np.logical_or(hot_num_a, hot_num_b, dtype='f')
-            nums = np.stack([mm_num, hot_num_a, hot_num_b], axis=-1)
-
-            x[count] = images
-            y[count] = nums
-
-            count += 1
-            if count % 1000 == 0:
-                print(count, '/', num_samples)
-
-    # save results
-    np.savez_compressed('./mmnist_data/' + save, x=x, y=y)
-
-    return tuple_dataset.TupleDataset(x, y) 
+def report(epoch, result, reconstruct):
+    mode = 'train' if chainer.config.train else 'test '
+    print('epoch {:2d}\t{} mean loss: {}, accuracy: {}'.format(
+        epoch, mode, result['mean_loss'], result['accuracy']))
+    if reconstruct:
+        print('\t\t\tclassification: {}, reconstruction: {}'.format(
+            result['cls_loss'], result['rcn_loss']))
 
 
 def main():
@@ -91,8 +43,10 @@ def main():
     np.random.seed(args.seed)
     model = nets.CapsNet(use_reconstruction=args.reconstruct, mmnist=args.mmnist)
 
+    # load model to continue training
     if args.load != '':
         serializers.load_npz(args.load, model)
+
     if args.gpu >= 0:
         # Make a speciied GPU current
         chainer.cuda.get_device_from_id(args.gpu).use()
@@ -104,70 +58,34 @@ def main():
     optimizer = chainer.optimizers.Adam(alpha=1e-3)
     optimizer.setup(model)
 
-    # Load the MNIST dataset or create MMNIST 
-    train, test = chainer.datasets.get_mnist(ndim=3)
+    # Load the MNIST dataset or create MNIST 
     if args.mmnist:
-        try:
-            raw = np.load('./mmnist_data/train.npz')
-            train = tuple_dataset.TupleDataset(raw['x'], raw['y']) 
-
-            raw = np.load('./mmnist_data/test.npz')
-            test = tuple_dataset.TupleDataset(raw['x'], raw['y']) 
-
-        except:
-            train = combine_images(train, save='train', num_samples=60000)
-            test = combine_images(test, save='test', num_samples=10000)
-        
-    train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
-    test_iter = chainer.iterators.SerialIterator(test, 100,
-                                                 repeat=False, shuffle=False)
-
-
-    def report(epoch, result):
-        mode = 'train' if chainer.config.train else 'test '
-        print('epoch {:2d}\t{} mean loss: {}, accuracy: {}'.format(
-            train_iter.epoch, mode, result['mean_loss'], result['accuracy']))
-        if args.reconstruct:
-            print('\t\t\tclassification: {}, reconstruction: {}'.format(
-                result['cls_loss'], result['rcn_loss']))
+        train_iter, test_iter = get_multi_mnist_dataset(args.batchsize, 100, path=DATA_PATH)
+    else:
+        train_iter, test_iter = get_mnist_dataset(args.batchsize, 100)
 
     best = 0.
     best_epoch = 0
     print('TRAINING starts')
     while train_iter.epoch < args.epoch:
         batch = train_iter.next()
-        m = concat_examples(batch, args.gpu)
-        if type(m) == type({}):
-            x, t = m['x'], m['y']
-        else:
-            x, t = m
-            
-        x = x.astype('float32')
-        t = t.astype('int32')
-
+        x, t = fetch_new_batch(batch, args.gpu)
         optimizer.update(model, x, t)
 
         # evaluation
         if train_iter.is_new_epoch:
             result = model.pop_results()
-            report(train_iter.epoch, result)
+            report(train_iter.epoch, result, args.reconstruct)
 
             with chainer.no_backprop_mode():
                 with chainer.using_config('train', False):
                     for batch in test_iter:
-                        m = concat_examples(batch, args.gpu)
-                        if type(m) == type({}):
-                            x, t = m['x'], m['y']
-                        else:
-                            x, t = m
-                        x = x.astype('float32')
-                        t = t.astype('int32')
+                        x, t = fetch_new_batch(batch, args.gpu)
                         loss = model(x, t)
 
                     result = model.pop_results()
-                    report(train_iter.epoch, result)
-            if train_iter.epoch % 10 == 0:
-                serializers.save_npz(args.save+'_'+str(train_iter.epoch), model)
+                    report(train_iter.epoch, result, args.reconstruct)
+            serializers.save_npz(args.save+'_'+str(train_iter.epoch), model)
             if result['accuracy'] > best:
                 best, best_epoch = result['accuracy'], train_iter.epoch
                 serializers.save_npz(args.save, model)
