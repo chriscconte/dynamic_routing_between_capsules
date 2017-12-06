@@ -13,6 +13,10 @@ from chainer import serializers
 
 import nets
 
+from data import get_multi_mnist_dataset 
+from data import get_mnist_dataset
+from data import fetch_new_batch
+
 
 def save_images(xs, filename, marked_row=0):
     width = xs[0].shape[0]
@@ -94,24 +98,43 @@ if __name__ == '__main__':
         description='CapsNet: MNIST reconstruction')
     parser.add_argument('--gpu', '-g', type=int, default=-1)
     parser.add_argument('--load')
+    parser.add_argument('--mmnist', '-m', action='store_true')
     args = parser.parse_args()
     print(json.dumps(args.__dict__, indent=2))
 
-    model = nets.CapsNet(use_reconstruction=True)
+    model = nets.CapsNet(use_reconstruction=True, mmnist=args.mmnist)
     serializers.load_npz(args.load, model)
     if args.gpu >= 0:
         chainer.cuda.get_device_from_id(args.gpu).use()
         model.to_gpu()
-    _, test = chainer.datasets.get_mnist(ndim=3)
+
+    if args.mmnist:
+        _, test = get_multi_mnist_dataset(args.batchsize, 100, path=DATA_PATH)
+    else:
+        _, test = get_mnist_dataset(args.batchsize, 100)
 
     batch = get_samples(test)
-    x, t = concat_examples(batch, args.gpu)
+    x, t = fetch_new_batch(batch, args.gpu)
 
     with chainer.no_backprop_mode():
         with chainer.using_config('train', False):
-            visualize_reconstruction(model, x, t)
-            visualize_reconstruction_alldigits(model, x, t)
+           
+            x_composed, x_a, x_b = xp.split(x,indices_or_sections=3,axis=1)
+            y_composed, y_a, y_b = xp.split(t,indices_or_sections=3,axis=-1)
+
+            y_composed = xp.squeeze(y_composed, axis=(2,))
+            
+            visualize_reconstruction(model, x_composed, y_a, filename='vis_a.png')
+            visualize_reconstruction_alldigits(model, x_composed, y_a, filename='vis_all_a.png')
+
+            visualize_reconstruction(model, x_composed, y_b, filename='vis_b.png')
+            visualize_reconstruction_alldigits(model, x_composed, y_b, filename='vis_all_b.png')
+            for i in range(10):
+                visualize_reconstruction_tweaked(
+                    model, x_composed[i * 2: i * 2 + 1], y_a[i * 2: i * 2 + 1],
+                    filename='vis_tweaked_a{}.png'.format(i))
+
             for i in range(10):
                 visualize_reconstruction_tweaked(
                     model, x[i * 2: i * 2 + 1], t[i * 2: i * 2 + 1],
-                    filename='vis_tweaked{}.png'.format(i))
+                    filename='vis_tweaked_b{}.png'.format(i))
