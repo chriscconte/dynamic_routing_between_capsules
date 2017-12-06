@@ -107,7 +107,7 @@ def get_samples(dataset):
 
 
 if __name__ == '__main__':
-    DATA_PATH = '/home/ccc2174/capsnet-segmentation/mmnist_data/'
+    DATA_PATH = './mmnist_data/'
 
     parser = argparse.ArgumentParser(
         description='CapsNet: MNIST reconstruction')

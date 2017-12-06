@@ -196,7 +196,7 @@ class CapsNet(chainer.Chain):
         batchsize = t.shape[0]
         I = xp.arange(batchsize)
         T = xp.zeros(vs_norm.shape, dtype='f')
-        
+        t = xp.argmax(t, axis=1)
         T[I, t] = 1.
         m = xp.full(vs_norm.shape, 0.1, dtype='f')
         m[I, t] = 0.9
@@ -218,6 +218,6 @@ class CapsNet(chainer.Chain):
             top_args = self.xp.argsort(v.data, axis=1)
             top_args[top_args < 10 - ndim] = -1
             top_args[top_args >= 10 - ndim] = 1
-
+            
             return ((top_args == t).astype('float32')).sum() / ndim
 
