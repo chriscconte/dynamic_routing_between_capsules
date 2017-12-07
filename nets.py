@@ -1,4 +1,8 @@
+from __future__ import print_function
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 import chainer
 from chainer import cuda
@@ -82,6 +86,7 @@ class CapsNet(chainer.Chain):
 
     def pop_results(self):
         merge = dict()
+        print(self.results['N'])
         merge['mean_loss'] = sum(self.results['loss']) / self.results['N']
         merge['cls_loss'] = sum(self.results['cls_loss']) / self.results['N']
         merge['rcn_loss'] = sum(self.results['rcn_loss']) / self.results['N']
@@ -100,7 +105,6 @@ class CapsNet(chainer.Chain):
 
             x_composed, x_a, x_b = xp.split(x,indices_or_sections=3,axis=1)
             y_composed, y_a, y_b = xp.split(t,indices_or_sections=3,axis=-1)
-
             y_composed = xp.squeeze(y_composed, axis=(2,))
             
             vs_norm, vs = self.output(x_composed)
@@ -120,26 +124,30 @@ class CapsNet(chainer.Chain):
             m[I, num_b] = 0.9
 
             #print('batchsize',batchsize)
-            #print('y_composed[0]',y_composed[0])
-            #print('vs_norm[0]',vs_norm[0])
-            #print('T[0]',T[0])
-            #print('m[0]',m[0])
+            #print('y_composed',y_composed)
+            #print('vs_norm',vs_norm)
+            #print('T',T)
+            #print('m',m)
 
             #print('x shape', x_composed[0].shape)
 
             #cv2.imshow('x_composed',xp.squeeze(x_composed[0]))
             #cv2.waitKey(0)
 
+            #exit(1)
+
             loss = T * F.relu(m - vs_norm) ** 2 + \
                 0.5 * (1. - T) * F.relu(vs_norm - m) ** 2
 
             self.loss = F.sum(loss) / batchsize
 
-            #loss_a = self.calculate_loss(vs_norm, y_a, vs, x_a)
-            #loss_b = self.calculate_loss(vs_norm, y_b, vs, x_b)
+            recon_loss = self.calculate_reconstruction_loss(vs, y_a, x_a)
+            recon_loss += self.calculate_reconstruction_loss(vs, y_b, x_b)
+            recon_loss /= 2.0
 
-            #self.loss = (loss_a + loss_b) / 2.0
+            self.loss += 0.0005 * recon_loss
 
+            self.results['rcn_loss'].append(recon_loss.data * t.shape[0])
             self.results['loss'].append(self.loss.data * y_composed.shape[0])
             self.results['correct'].append(self.calculate_correct(vs_norm, y_composed, ndim=2))
             self.results['N'] += y_composed.shape[0]
@@ -208,7 +216,32 @@ class CapsNet(chainer.Chain):
             self.fc3(F.relu(
                 self.fc2(F.relu(
                     self.fc1(masked_vs)))))).reshape((batchsize, 1, 36, 36))
+
         return x_recon
+
+
+    def save_images(self, xs, filename, marked_row=0):
+        width = xs[0].shape[0]
+        height = len(xs)
+    
+        xs = [np.array(x.tolist(), np.float32) for x in xs]
+        # subplots with many figs are very slow
+        fig, ax = plt.subplots(
+            height, width, figsize=(1 * width / 2.5, height / 2.5))
+        xs = np.concatenate(xs, axis=0)
+        for i, (ai, xi) in enumerate(zip(ax.ravel(), xs)):
+            ai.set_xticklabels([])
+            ai.set_yticklabels([])
+            ai.set_axis_off()
+            color = 'Greens_r' if i // width == marked_row else 'blues_r'
+            ai.imshow(xi.reshape(36, 36), cmap=color, vmin=0., vmax=1.)
+    
+        plt.subplots_adjust(
+            left=None, bottom=None, right=None, top=None, wspace=0.05, hspace=0.05)
+        # saving and clearing subplots with many figs are also very slow
+        fig.savefig(filename, bbox_inches='tight', pad=0.)
+        plt.clf()
+        plt.close('all')
 
     def calculate_loss(self, vs_norm, t, vs, x):
         class_loss = self.calculate_classification_loss(vs_norm, t)
@@ -226,7 +259,7 @@ class CapsNet(chainer.Chain):
         batchsize = t.shape[0]
         I = xp.arange(batchsize)
         T = xp.zeros(vs_norm.shape, dtype='f')
-        t = xp.argmax(t, axis=1)
+
         T[I, t] = 1.
         m = xp.full(vs_norm.shape, 0.1, dtype='f')
         m[I, t] = 0.9
@@ -238,6 +271,8 @@ class CapsNet(chainer.Chain):
     def calculate_reconstruction_loss(self, vs, t, x):
         batchsize = t.shape[0]
         x_recon = self.reconstruct(vs, t)
+        
+
         loss = (x_recon - x) ** 2
         return F.sum(loss) / batchsize
 
@@ -245,9 +280,6 @@ class CapsNet(chainer.Chain):
         if ndim==1:
             return (self.xp.argmax(v.data, axis=1) == t).sum()
         else:
-            top_args = self.xp.argsort(v.data, axis=1)
-            top_args[top_args < 10 - ndim] = -1
-            top_args[top_args >= 10 - ndim] = 1
-            
-            return ((top_args == t).astype('float32')).sum() / ndim
+            found = F.floor(v.data + 0.1)
+            return (F.sum(found * t) / ndim).data
 
