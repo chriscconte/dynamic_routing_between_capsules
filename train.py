@@ -9,6 +9,7 @@ from chainer.dataset import concat_examples
 from chainer.datasets import tuple_dataset
 from chainer import serializers
 import nets
+import cv2
 
 from data import get_multi_mnist_dataset 
 from data import get_mnist_dataset
@@ -77,15 +78,22 @@ def main():
             result = model.pop_results()
             report(train_iter.epoch, result, args.reconstruct)
 
-            with chainer.no_backprop_mode():
-                with chainer.using_config('train', False):
-                    for batch in test_iter:
-                        x, t = fetch_new_batch(batch, args.gpu)
-                        loss = model(x, t)
+            #with chainer.no_backprop_mode():
+            #    with chainer.using_config('train', False):
+            #        for batch in test_iter:
+            #            x, t = fetch_new_batch(batch, args.gpu)
+            #            
+            #            x_comp, a, b = np.split(x,indices_or_sections=3,axis=1)
+            #            y_composed, y_a, y_b = np.split(t,indices_or_sections=3,axis=-1)
+            #            for i in range(10):
+            #                cv2.imwrite(str(np.argmax(y_a[i]))+str(np.argmax(y_b[i]))+'.png', np.squeeze(x_comp[i])*255)
+            #                cv2.waitKey(0)
 
-                    result = model.pop_results()
-                    report(train_iter.epoch, result, args.reconstruct)
-            serializers.save_npz(args.save+'_'+str(train_iter.epoch), model)
+            #            loss = model(x, t)
+
+            #        result = model.pop_results()
+            #        report(train_iter.epoch, result, args.reconstruct)
+
             if result['accuracy'] > best:
                 best, best_epoch = result['accuracy'], train_iter.epoch
                 serializers.save_npz(args.save, model)

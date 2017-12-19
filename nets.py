@@ -280,6 +280,14 @@ class CapsNet(chainer.Chain):
         if ndim==1:
             return (self.xp.argmax(v.data, axis=1) == t).sum()
         else:
-            found = F.floor(v.data + 0.1)
-            return (F.sum(found * t) / ndim).data
+
+            v_max = F.max(v, axis=-1)
+            v_avg = F.average(v, axis=-1)
+            found = F.ceil(v - v_max + v_avg * 0.2)
+            #print(found.data)
+            #print(t)
+            #print(found.data == t)
+            #print((found.data == t) * t)
+            #exit(1)
+            return (((found.data ==  t) * t).astype('float32') / ndim).sum()
 

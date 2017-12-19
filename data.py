@@ -12,10 +12,10 @@ from chainer.datasets import tuple_dataset
 def get_multi_mnist_dataset(batchsize, testsize, path='./'):
     try:
         raw = np.load(os.path.join(path, 'train.npz'))
-        train = tuple_dataset.TupleDataset(raw['x'][:10], raw['y'][:10]) 
+        train = tuple_dataset.TupleDataset(raw['x'][:100], raw['y'][:100]) 
 
         raw = np.load(os.path.join(path, 'test.npz'))
-        test = tuple_dataset.TupleDataset(raw['x'][:10], raw['y'][:10]) 
+        test = tuple_dataset.TupleDataset(raw['x'][:100], raw['y'][:100]) 
     except:
         print(sys.exc_info())
         print('failed to find data in path: ' + path)
